@@ -3,6 +3,7 @@ package qxtr.test;
 import org.hibernate.CacheMode;
 import org.hibernate.Session;
 import org.springframework.boot.CommandLineRunner;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import qxtr.loader.gtfs.GtfsLoader;
@@ -15,6 +16,7 @@ import java.io.IOException;
 import java.io.InputStream;
 
 @Service
+@Order(2)
 public class LoadGtfs implements CommandLineRunner {
 
     @PersistenceContext

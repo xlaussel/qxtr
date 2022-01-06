@@ -18,14 +18,14 @@ import javax.persistence.*;
 @NoArgsConstructor
 public class VehicleJourneyStop extends DSEntity {
 
-    public VehicleJourneyStop(DataSetImport dataSetImport, short position, StopTime aimedArrival, StopTime aimedDeparture) {
+    public VehicleJourneyStop(DataSetImport dataSetImport, short position, int aimedArrival, int aimedDeparture) {
         super(dataSetImport);
         this.position = position;
         this.aimedArrival = aimedArrival;
         this.aimedDeparture = aimedDeparture;
     }
 
-    public VehicleJourneyStop(DataSetImport dataSetImport, VehicleJourney vehicleJourney, short position, StopTime aimedArrival, StopTime aimedDeparture) {
+    public VehicleJourneyStop(DataSetImport dataSetImport, VehicleJourney vehicleJourney, short position, int aimedArrival, int aimedDeparture) {
         super(dataSetImport);
         this.position = position;
         this.aimedArrival = aimedArrival;
@@ -55,13 +55,13 @@ public class VehicleJourneyStop extends DSEntity {
 
     @Basic(optional = false)
     @Column(nullable = false)
-    @Convert(converter = StopTime.converter.class)
-    private StopTime aimedArrival;
+    //@Convert(converter = StopTime.converter.class)
+    private int aimedArrival;
 
     @Basic(optional = false)
     @Column(nullable = false)
-    @Convert(converter = StopTime.converter.class)
-    private StopTime aimedDeparture;
+    //@Convert(converter = StopTime.converter.class)
+    private int aimedDeparture;
 
     public void setVehicleJourney(VehicleJourney vehicleJourney) {
         if (this.vehicleJourney==vehicleJourney) return;

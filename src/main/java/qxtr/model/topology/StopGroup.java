@@ -26,8 +26,12 @@ public class StopGroup extends IdentifiedDSEntity {
 
     @Setter
     @Basic(optional = false)
-    @Column(length = 50,nullable = false)
+    @Column(nullable = false)
     private String name;
+
+    public void setName(String name) {
+        this.name = name.length()<=255?name:name.substring(0,255);
+    }
 
     @OneToMany(mappedBy = "stopGroup",cascade =  CascadeType.ALL)
     @ToString.Exclude

@@ -76,13 +76,13 @@ public class CsvReader implements Iterable<CsvReader.Line>, Iterator<CsvReader.L
 
     public CsvReader(@NotNull InputStream stream,@NotNull char separator) throws IOException {
         internalReader=new BufferedReader(new InputStreamReader(stream));
-        this.separator=String.valueOf(separator);
+        this.separator=separator;
         int i=0;
         String line=internalReader.readLine();
         if (line.charAt(0)=='\ufeff') { //TODO check if could be removed automatically
             line=line.substring(1);
         }
-        for (String columnName : line.split(this.separator,-1)) {
+        for (String columnName : splitLine(line)) {
             columnNames.put(columnName.trim(),i++);
         }
     }
@@ -97,11 +97,42 @@ public class CsvReader implements Iterable<CsvReader.Line>, Iterator<CsvReader.L
 
     private final Map<String,Integer> columnNames=new HashMap<>();
     private final BufferedReader internalReader;
-    private final String separator;
+    private final char separator;
 
     public Line readLine() throws IOException {
         var line=internalReader.readLine();
-        return line==null?null:new Line(line.split(separator,-1));
+
+        return line==null?null:new Line(splitLine(line));
+    }
+
+    private String[] splitLine(String line) {
+        int tokenIndex=0;
+        int first=0;
+        ArrayList<String> resultList=new ArrayList<>(20);
+        for (int i=0;i<line.length();++i) {
+            if (line.charAt(i)==separator) {
+                resultList.add(line.substring(first,i));
+                first=i+1;
+            } else if (line.charAt(i)=='"') {
+                first=i+1;
+                StringBuilder builder=new StringBuilder();
+                while (true) {
+                    while (++i<line.length() && line.charAt(i) != '"') ;
+                    builder.append(line, first, i);
+                    if (++i<line.length() && line.charAt(i) == '"') {
+                        builder.append('"');
+                        first = i + 1;
+                    } else {
+                        while (i<line.length() && line.charAt(i)!=separator) i++;
+                        first=i+1;
+                        resultList.add(builder.toString());
+                        break;
+                    }
+                }
+            }
+        }
+        resultList.add(line.substring(first));
+        return resultList.toArray(new String[0]);
     }
 
     public void close() throws IOException {

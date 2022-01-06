@@ -24,10 +24,13 @@ public class Stop extends IdentifiedDSEntity {
         dataSetImport.getStops().add(this);
     }
 
-    @Setter
     @Basic(optional = false)
-    @Column(length = 50,nullable = false)
+    @Column(nullable = false)
     private String name;
+
+    public void setName(String name) {
+        this.name = name.length()<=255?name:name.substring(0,255);
+    }
 
     @ManyToOne(optional = false,cascade = CascadeType.ALL)
     @JoinColumn(nullable = false)

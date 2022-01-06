@@ -44,6 +44,6 @@ public class VehicleJourney extends IdentifiedDSEntity implements Comparable<Veh
 
     @Override
     public int compareTo(VehicleJourney o) {
-        return vehicleJourneyStops.get(0).getAimedDeparture().toSeconds()-o.vehicleJourneyStops.get(0).getAimedDeparture().toSeconds();
+        return vehicleJourneyStops.get(0).getAimedDeparture()-o.vehicleJourneyStops.get(0).getAimedDeparture();
     }
 }

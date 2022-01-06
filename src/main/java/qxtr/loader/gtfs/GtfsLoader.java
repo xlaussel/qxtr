@@ -118,13 +118,16 @@ public class GtfsLoader implements LoaderInterface {
                     point = geometryFactory.createPoint(new Coordinate(Float.parseFloat(lon), Float.parseFloat(lat)));
                 }
             }
+            var stopName=line.get("stop_name");
+            var stopId = line.get("stop_id");
+            if (stopId.contains("IDFM:474351")) {
+                System.out.println("ppipo");
+            }
             if (type.equals("0")) {
-                String stopId = line.get("stop_id");
-                var stopName=line.get("stop_name");
                 Stop stop = getIdentifiedDSEntity(Stop.class,stopId);
                 stop.setName(stopName);
-                String stopGroupId = line.get("parent_station", null);
-                if (stopGroupId != null) {
+                String stopGroupId = line.get("parent_station","");
+                if (!stopGroupId.isEmpty()) {
                     stop.setStopGroup(getIdentifiedDSEntity(StopGroup.class,stopGroupId));
                 } else {
                     var stopGroup=getIdentifiedDSEntity(StopGroup.class,stopName);
@@ -135,8 +138,9 @@ public class GtfsLoader implements LoaderInterface {
                     stop.setLocation(point);
                 }
             } else if (type.equals("1")) {
-                var stopGroup = getIdentifiedDSEntity(StopGroup.class,line.get("stop_id"));
-                stopGroup.setName(line.get("stop_name"));
+
+                var stopGroup = getIdentifiedDSEntity(StopGroup.class,stopId);
+                stopGroup.setName(stopName);
                 if (point != null) {
                     stopGroup.setLocation(point);
                 }
@@ -147,16 +151,24 @@ public class GtfsLoader implements LoaderInterface {
 
     private void loadTimes(InputStream stopTimesStream) throws IOException {
         log("Loading Times");
-        CsvReader.reader(stopTimesStream).forEach(line -> {
-            var vehicleJourney = getIdentifiedDSEntity(VehicleJourney.class,line.get("trip_id"));
-            StopTime arrivaltime = StopTime.parse(line.get("arrival_time"));
-            StopTime departuretime = StopTime.parse(line.get("departure_time"));
-            short sequence = Short.parseShort(line.get("stop_sequence"));
-            boolean boardAllowed = !line.get("pickup_type", "0").equals("1");
-            boolean alightAllowed = !line.get("drop_off_type", "0").equals("1");
-            VehicleJourneyStop vehicleJourneyStop = new VehicleJourneyStop(dataSetImport, vehicleJourney, sequence, arrivaltime, departuretime);
+        var reader=new CsvReader(stopTimesStream);
+        var TRIP_ID=reader.columnIndex("trip_id");
+        var ARRIVAL_TIME=reader.columnIndex("arrival_time");
+        var DEPARTURE_TIME=reader.columnIndex("departure_time");
+        var STOP_SEQUENCE=reader.columnIndex("stop_sequence");
+        var PICKUP_TYPE=reader.columnIndex("pickup_type");
+        var DROP_OFF_TYPE=reader.columnIndex("drop_off_type");
+        var STOP_ID=reader.columnIndex("stop_id");
+        reader.forEach(line -> {
+            var vehicleJourney = getIdentifiedDSEntity(VehicleJourney.class,line.get(TRIP_ID));
+            StopTime arrivaltime = StopTime.parse(line.get(ARRIVAL_TIME));
+            StopTime departuretime = StopTime.parse(line.get(DEPARTURE_TIME));
+            short sequence = Short.parseShort(line.get(STOP_SEQUENCE));
+            boolean boardAllowed = !line.get(PICKUP_TYPE, "0").equals("1");
+            boolean alightAllowed = !line.get(DROP_OFF_TYPE, "0").equals("1");
+            VehicleJourneyStop vehicleJourneyStop = new VehicleJourneyStop(dataSetImport, vehicleJourney, sequence, arrivaltime.toSeconds(), departuretime.toSeconds());
             vehicleJourneyStopAuthorizations.put(vehicleJourneyStop,new VehicleJourneyStopAuthorization(boardAllowed,alightAllowed));
-            vehicleJourneyStop.setStop(getIdentifiedDSEntity(Stop.class,line.get("stop_id")));
+            vehicleJourneyStop.setStop(getIdentifiedDSEntity(Stop.class,line.get(STOP_ID)));
         });
         log("Done");
     }
