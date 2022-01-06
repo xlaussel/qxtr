@@ -1,11 +1,5 @@
 package qxtr.loader.gtfs;
 
-import lombok.Getter;
-import lombok.Setter;
-import qxtr.model.DataSetImport;
-import qxtr.model.schedules.VehicleJourney;
-import qxtr.model.topology.JourneyPattern;
-
 import java.util.Comparator;
 import java.util.LinkedList;
 import java.util.List;

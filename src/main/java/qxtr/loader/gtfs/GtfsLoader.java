@@ -6,9 +6,10 @@ import org.locationtech.jts.geom.Point;
 import org.locationtech.jts.geom.PrecisionModel;
 import qxtr.loader.LoaderInput;
 import qxtr.loader.LoaderInterface;
-import qxtr.model.DataSet;
-import qxtr.model.DataSetImport;
+import qxtr.model.dataset.DataSet;
+import qxtr.model.dataset.DataSetImport;
 import qxtr.model.common.IdentifiedDSEntity;
+import qxtr.model.common.StopTime;
 import qxtr.model.schedules.*;
 import qxtr.model.topology.*;
 import qxtr.utils.CsvReader;
@@ -16,13 +17,17 @@ import qxtr.utils.CsvReader;
 import java.io.*;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
-import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
 public class GtfsLoader implements LoaderInterface {
+
+    public GtfsLoader(DataSet dataSet) {
+        this.dataSetImport = new DataSetImport(dataSet);
+    }
 
     @Override
     public DataSetImport load(DataSet dataSet, LoaderInput input) {
@@ -35,11 +40,30 @@ public class GtfsLoader implements LoaderInterface {
 
     private final IdentityHashMap<VehicleJourney, Route> vehicleJourneyRoutes = new IdentityHashMap<>();
 
+    private record VehicleJourneyStopAuthorization(boolean boardAllowed,boolean alightAllowed) {
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+            VehicleJourneyStopAuthorization that = (VehicleJourneyStopAuthorization) o;
+            return boardAllowed == that.boardAllowed && alightAllowed == that.alightAllowed;
+        }
+
+        @Override
+        public int hashCode() {
+            return (boardAllowed?1:0)+(alightAllowed?2:0);
+        }
+    }
+
+    private final IdentityHashMap<VehicleJourneyStop,VehicleJourneyStopAuthorization> vehicleJourneyStopAuthorizations=new IdentityHashMap<>();
+
     private <T extends IdentifiedDSEntity> T getIdentifiedDSEntity(Class<T> clazz,String identifier) {
         return  getIdentifiedDSEntityMap(clazz)
                 .computeIfAbsent(identifier,id-> { try {
                     return clazz.getConstructor(DataSetImport.class, String.class).newInstance(dataSetImport, id);
-                  } catch (Exception e) { return null;}
+                  } catch (Exception e) {
+                    e.printStackTrace();
+                    return null;}
                 });
     }
 
@@ -69,14 +93,21 @@ public class GtfsLoader implements LoaderInterface {
         makeJourneyPatterns();
     }
 
+    private void log(String message) {
+        System.out.println(message);
+    }
+
     private void loadAgencies(InputStream agencyStream) throws IOException {
+        log("Loading Agencies");
         var reader=new CsvReader(agencyStream);
         int AGENCY_ID=reader.columnIndex("agency_id");
         int AGENCY_NAME=reader.columnIndex("agency_name");
-        CsvReader.reader(agencyStream).forEach(line -> getIdentifiedDSEntity(Agency.class,line.get(AGENCY_ID)).setName(line.get(AGENCY_NAME)));
+        reader.forEach(line -> getIdentifiedDSEntity(Agency.class,line.get(AGENCY_ID)).setName(line.get(AGENCY_NAME)));
+        log("Done");
     }
 
     private void loadStops(InputStream stopsStream) throws IOException {
+        log("Loading Stop");
         CsvReader.reader(stopsStream).forEach(line -> {
             var type = line.get("location_type", "0");
             Point point = null;
@@ -89,11 +120,16 @@ public class GtfsLoader implements LoaderInterface {
             }
             if (type.equals("0")) {
                 String stopId = line.get("stop_id");
+                var stopName=line.get("stop_name");
                 Stop stop = getIdentifiedDSEntity(Stop.class,stopId);
-                stop.setName(line.get("stop_name"));
+                stop.setName(stopName);
                 String stopGroupId = line.get("parent_station", null);
                 if (stopGroupId != null) {
                     stop.setStopGroup(getIdentifiedDSEntity(StopGroup.class,stopGroupId));
+                } else {
+                    var stopGroup=getIdentifiedDSEntity(StopGroup.class,stopName);
+                    stopGroup.setName(stopName);
+                    stop.setStopGroup(stopGroup);
                 }
                 if (point != null) {
                     stop.setLocation(point);
@@ -106,22 +142,27 @@ public class GtfsLoader implements LoaderInterface {
                 }
             }
         });
+        log("Done");
     }
 
     private void loadTimes(InputStream stopTimesStream) throws IOException {
+        log("Loading Times");
         CsvReader.reader(stopTimesStream).forEach(line -> {
             var vehicleJourney = getIdentifiedDSEntity(VehicleJourney.class,line.get("trip_id"));
-            LocalTime arrivaltime = LocalTime.parse(line.get("arrival_time"));
-            LocalTime departuretime = LocalTime.parse(line.get("departure_time"));
+            StopTime arrivaltime = StopTime.parse(line.get("arrival_time"));
+            StopTime departuretime = StopTime.parse(line.get("departure_time"));
             short sequence = Short.parseShort(line.get("stop_sequence"));
             boolean boardAllowed = !line.get("pickup_type", "0").equals("1");
             boolean alightAllowed = !line.get("drop_off_type", "0").equals("1");
-            VehicleJourneyAtStop vehicleJourneyAtStop = new VehicleJourneyAtStop(dataSetImport, vehicleJourney, sequence, arrivaltime, departuretime, alightAllowed, boardAllowed);
-            vehicleJourneyAtStop.setStop(getIdentifiedDSEntity(Stop.class,line.get("stop_id")));
+            VehicleJourneyStop vehicleJourneyStop = new VehicleJourneyStop(dataSetImport, vehicleJourney, sequence, arrivaltime, departuretime);
+            vehicleJourneyStopAuthorizations.put(vehicleJourneyStop,new VehicleJourneyStopAuthorization(boardAllowed,alightAllowed));
+            vehicleJourneyStop.setStop(getIdentifiedDSEntity(Stop.class,line.get("stop_id")));
         });
+        log("Done");
     }
 
     private void loadCalendar(InputStream calendarStream) throws IOException {
+        log("Loading Calendar");
         CsvReader.reader(calendarStream).forEach(line -> {
             var start = LocalDate.parse(line.get("start_date"), DateTimeFormatter.BASIC_ISO_DATE);
             var end = LocalDate.parse(line.get("end_date"), DateTimeFormatter.BASIC_ISO_DATE);
@@ -135,99 +176,165 @@ public class GtfsLoader implements LoaderInterface {
             timeTable.setValidDays(days);
             timeTable.getPeriods().add(new Period(start, end));
         });
+        log("Done");
     }
 
     private void loadCalendarDates(InputStream calendarDatesStream) throws IOException {
+        log("Loading Dates");
         CsvReader.reader(calendarDatesStream).forEach(line -> {
             var timeTable = getIdentifiedDSEntity(TimeTable.class,line.get("service_id"));
             var date = LocalDate.parse(line.get("date"), DateTimeFormatter.BASIC_ISO_DATE);
             boolean in_out = line.get("exception_type", "1").equals("1");
             timeTable.getDays().add(new TimeTableDay(date, in_out));
         });
+        log("Done");
     }
 
     private void loadTrips(InputStream tripStream) throws IOException {
+        log("Loading Trips");
         CsvReader.reader(tripStream).forEach(line -> {
             var vehicleJourney = getIdentifiedDSEntity(VehicleJourney.class,line.get("trip_id"));
             vehicleJourney.getTimeTables().add(getIdentifiedDSEntity(TimeTable.class,line.get("service_id")));
-            vehicleJourneyRoutes.put(vehicleJourney, getIdentifiedDSEntity(Route.class,line.get("route_id")));
+            var direction=line.get("direction_id","0");
+            var routeId=line.get("route_id")+':'+direction;
+            var route=getIdentifiedDSEntity(Route.class,routeId);
+            if (route.getLine()==null) {
+                route.setLine(getIdentifiedDSEntity(Line.class,line.get("route_id")));
+            }
+            vehicleJourneyRoutes.put(vehicleJourney, route);
         });
+        log("Done");
     }
 
     private void loadRoutes(InputStream routesStream) throws IOException {
+        log("Loading Routes");
         CsvReader.reader(routesStream).forEach(line -> {
-            var route = getIdentifiedDSEntity(Route.class,line.get("route_id"));
-            route.setShortName(line.get("route_short_name", null));
-            route.setName(line.get("route_long_name", null));
-            var sortString = line.get("route_sort_order", null);
-            if (sortString != null) {
-                route.setOrder(Short.parseShort(sortString));
-            }
+            var theLine = getIdentifiedDSEntity(Line.class,line.get("route_id"));
+            theLine.setShortName(line.get("route_short_name", null));
+            theLine.setName(line.get("route_long_name", null));
+            theLine.setAgency(getIdentifiedDSEntity(Agency.class,line.get("agency_id")));
         });
+        log("Done");
     }
 
-    private static class JourneyPatternDiscriminator {
+    /**
+     * Class used to discriminate the VehicleJourney
+     */
+    private class JourneyPatternDiscriminator {
 
-        public VehicleJourney vehicleJourney;
-        public Route route;
+        public final VehicleJourney vehicleJourney;
+        public final Route route;
 
         public JourneyPatternDiscriminator(VehicleJourney vehicleJourney,Route route) {
             this.vehicleJourney = vehicleJourney;
             this.route=route;
         }
 
+        /**
+         * @param o
+         * @return true if the route is the same and the VehicleJourneys have the same structure => Same JourneyPattern
+         */
         @Override
         public boolean equals(Object o) {
             if (this == o) return true;
             if (o == null || getClass() != o.getClass()) return false;
             JourneyPatternDiscriminator that = (JourneyPatternDiscriminator) o;
             if (that.route!=route) return false;
-            if (vehicleJourney.getVehicleJourneyAtStops().size()!=that.vehicleJourney.getVehicleJourneyAtStops().size()) return false;
-            var iter1=vehicleJourney.getVehicleJourneyAtStops().iterator();
-            var iter2=that.vehicleJourney.getVehicleJourneyAtStops().iterator();
+            if (vehicleJourney.getVehicleJourneyStops().size()!=that.vehicleJourney.getVehicleJourneyStops().size()) return false;
+            var iter1=vehicleJourney.getVehicleJourneyStops().iterator();
+            var iter2=that.vehicleJourney.getVehicleJourneyStops().iterator();
             while (iter1.hasNext()) {
                 var p1=iter1.next();
                 var p2=iter2.next();
                 if (p1.getStop()!=p2.getStop()) return false;
-                if (p1.isAlightAllowed()!=p2.isAlightAllowed()) return false;
-                if (p1.isBoardAllowed()!=p2.isBoardAllowed()) return false;
+                if (!vehicleJourneyStopAuthorizations.get(p1).equals(vehicleJourneyStopAuthorizations.get(p2))) return false;
             }
             return true;
         };
 
+        Integer hash=null;
+
         @Override
         public int hashCode() {
-            int result = Objects.hashCode(route);
-            for (var vehicleJourneyAtStop: vehicleJourney.getVehicleJourneyAtStops()) {
-                result = result * 31 + Objects.hash(
-                        vehicleJourneyAtStop.getStop(),
-                        vehicleJourneyAtStop.isAlightAllowed(),
-                        vehicleJourneyAtStop.isBoardAllowed());
+            if (hash==null) {
+                int computed = route.hashCode();
+                for (var vehicleJourneyStop : vehicleJourney.getVehicleJourneyStops()) {
+                    computed = computed * 31 + Objects.hash(
+                            vehicleJourneyStop.getStop(),
+                            vehicleJourneyStopAuthorizations.get(vehicleJourneyStop)
+                    );
+                }
+                hash = computed;
             }
-            return result;
+            return hash.intValue();
         }
     }
 
     private void makeJourneyPatterns() {
+        log("Making Patterns");
+
         HashMap<JourneyPatternDiscriminator, List<VehicleJourney>> journeys = new HashMap<>();
+
+
+        Comparator<VehicleJourneyStop> vehicleJourneyStopComparator=new Comparator<VehicleJourneyStop>() {
+            @Override
+            public int compare(VehicleJourneyStop o1, VehicleJourneyStop o2) {
+                return o1.getPosition()-o2.getPosition();
+            }
+        };
         getIdentifiedDSEntityMap(VehicleJourney.class).forEach((id,vehicleJourney)-> {
             //Order stops to allow hash and egual. For use by JourneyPatternDiscriminator
-            vehicleJourney.getVehicleJourneyAtStops().sort(null);
+            vehicleJourney.getVehicleJourneyStops().sort(vehicleJourneyStopComparator);
             journeys.computeIfAbsent(new JourneyPatternDiscriminator(vehicleJourney,vehicleJourneyRoutes.get(vehicleJourney)),k->new ArrayList<>()).add(vehicleJourney);
         });
-        IdentityHashMap<Route,Integer> nbRoutesFound=new IdentityHashMap<>();
-        journeys.forEach((discriminator,vehicleJourneys)-> {
-            var route=discriminator.route;
-            int nb=nbRoutesFound.computeIfAbsent(route,r->1);
-            nbRoutesFound.put(route,nb+1);
-            JourneyPattern journeyPattern=new JourneyPattern(dataSetImport,route.getExternalId()+'-'+nb,route);
-            // create the stop points
-            for (int i=0;i<discriminator.vehicleJourney.getVehicleJourneyAtStops().size();++i) {
 
-            }
-            journeyPattern.setStopPoints(
-                    discriminator.vehicleJourney.getVehicleJourneyAtStops().stream()
-                            .map(VehicleJourneyAtStop::getStopPoint).toList());
+        IdentityHashMap<Route,Integer> nbJourneyPatternsFound=new IdentityHashMap<>();
+
+        journeys.forEach((discriminator,vehicleJourneys)-> {
+
+            var route=discriminator.route;
+
+
+            //create the journey pattern
+            int nb=nbJourneyPatternsFound.computeIfAbsent(route,r->0);
+            nbJourneyPatternsFound.put(route,nb+1);
+            String journeyPatternId=route.getExternalId()+':'+nb;
+            var journeyPattern=getIdentifiedDSEntity(JourneyPattern.class,journeyPatternId);
+            journeyPattern.setRoute(route);
+
+
+            //create the JourneyPatternStops
+            AtomicInteger i= new AtomicInteger(0);
+            journeyPattern.setJourneyPatternStops(
+                    discriminator.vehicleJourney.getVehicleJourneyStops().stream()
+                            .map(vehicleJourneyStop -> {
+                                String journeyPatternStopId=journeyPatternId+':'+(i.get());
+                                var journeyPatternStop=getIdentifiedDSEntity(JourneyPatternStop.class,journeyPatternStopId);
+                                var authorizations=vehicleJourneyStopAuthorizations.get(vehicleJourneyStop);
+                                journeyPatternStop.setStop(vehicleJourneyStop.getStop());
+                                journeyPatternStop.setAlightAllowed(authorizations.alightAllowed);
+                                journeyPatternStop.setBoardAllowed(authorizations.boardAllowed);
+                                journeyPatternStop.setPosition((short) i.getAndIncrement());
+                                return journeyPatternStop;
+                            }).toList());
+
+
+            //set the JourneyPatternStops for all the vehicleJourneys, recompute their positions in order to start at 0 and eliminate holes
+            vehicleJourneys.forEach(vehicleJourney -> {
+                vehicleJourney.setJourneyPattern(journeyPattern);
+                var iterJourneyPatternStops=journeyPattern.getJourneyPatternStops().iterator();
+                var iterVehicleJourneyStops=vehicleJourney.getVehicleJourneyStops().iterator();
+                while (iterJourneyPatternStops.hasNext()) {
+                    var journeyPatternStop=iterJourneyPatternStops.next();
+                    var vehicleJourneyStop=iterVehicleJourneyStops.next();
+                    vehicleJourneyStop.setJourneyPatternStop(journeyPatternStop);
+                    vehicleJourneyStop.setPosition(journeyPatternStop.getPosition());
+                }
+            });
+
+
         });
+        log("Done");
     }
+
 }

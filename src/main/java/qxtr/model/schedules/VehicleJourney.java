@@ -2,12 +2,10 @@ package qxtr.model.schedules;
 
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import lombok.Setter;
 import lombok.ToString;
-import qxtr.model.DataSetImport;
+import qxtr.model.dataset.DataSetImport;
 import qxtr.model.common.IdentifiedDSEntity;
 import qxtr.model.topology.JourneyPattern;
-import qxtr.model.topology.StopGroup;
 
 import javax.persistence.*;
 import java.util.ArrayList;
@@ -15,11 +13,10 @@ import java.util.LinkedList;
 import java.util.List;
 
 @Getter
-@Setter
 @ToString
 @Entity
 @NoArgsConstructor
-public class VehicleJourney extends IdentifiedDSEntity {
+public class VehicleJourney extends IdentifiedDSEntity implements Comparable<VehicleJourney> {
 
     public VehicleJourney(DataSetImport dataSetImport,String externalId) {
         super(dataSetImport,externalId);
@@ -29,9 +26,9 @@ public class VehicleJourney extends IdentifiedDSEntity {
     @JoinColumn(nullable = false)
     private JourneyPattern journeyPattern;
 
-    @OneToMany(mappedBy = "vehicleJourney")
+    @OneToMany(mappedBy = "vehicleJourney",cascade = CascadeType.ALL)
     @OrderBy("position")
-    private List<VehicleJourneyAtStop> vehicleJourneyAtStops=new ArrayList<>();
+    private List<VehicleJourneyStop> vehicleJourneyStops=new ArrayList<>();
 
     @ManyToMany(mappedBy = "vehicleJourneys",cascade = CascadeType.ALL)
     private List<TimeTable> timeTables=new LinkedList<>();
@@ -43,5 +40,10 @@ public class VehicleJourney extends IdentifiedDSEntity {
         }
         journeyPattern.getVehicleJourneys().add(this);
         this.journeyPattern=journeyPattern;
+    }
+
+    @Override
+    public int compareTo(VehicleJourney o) {
+        return vehicleJourneyStops.get(0).getAimedDeparture().toSeconds()-o.vehicleJourneyStops.get(0).getAimedDeparture().toSeconds();
     }
 }

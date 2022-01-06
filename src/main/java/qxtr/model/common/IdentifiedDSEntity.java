@@ -4,7 +4,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.ToString;
-import qxtr.model.DataSetImport;
+import qxtr.model.dataset.DataSetImport;
 
 import javax.persistence.*;
 

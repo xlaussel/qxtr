@@ -1,11 +1,11 @@
 package qxtr.model.schedules;
 
 import lombok.Getter;
+import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.hibernate.annotations.Fetch;
 import org.hibernate.annotations.FetchMode;
-import qxtr.model.DataSetImport;
-import qxtr.model.common.DSEntity;
+import qxtr.model.dataset.DataSetImport;
 import qxtr.model.common.IdentifiedDSEntity;
 
 import javax.persistence.*;
@@ -14,13 +14,14 @@ import java.util.*;
 
 @Entity
 @Getter
+@NoArgsConstructor
 public class TimeTable extends IdentifiedDSEntity  {
 
     public TimeTable(DataSetImport dataSetImport, String externalId) {
         super(dataSetImport,externalId);
     }
 
-    @ManyToMany(mappedBy = "timeTables")
+    @ManyToMany
     private Set<VehicleJourney> vehicleJourneys=new HashSet<>();
 
     @Basic(optional = false)
@@ -30,11 +31,12 @@ public class TimeTable extends IdentifiedDSEntity  {
 
     @ElementCollection(fetch = FetchType.EAGER)
     @Fetch(FetchMode.JOIN)
+    @OrderColumn
     private List<Period> periods = new ArrayList<>();
 
     @ElementCollection(fetch = FetchType.EAGER)
     @Fetch(FetchMode.JOIN)
-    @OrderColumn(name = "day", nullable = false)
+    @OrderColumn
     private List<TimeTableDay> days = new ArrayList<>();
 
     @Basic(optional = false)
@@ -45,7 +47,15 @@ public class TimeTable extends IdentifiedDSEntity  {
     @Column(nullable = false)
     private LocalDate last;
 
-    public TreeSet<LocalDate> getDates() {
+    @Transient
+    private TreeSet<LocalDate> dates;
+
+    @PostLoad
+    private void setDates() {
+        dates=getDates();
+    }
+
+    private TreeSet<LocalDate> getDates() {
         TreeSet<LocalDate> result=new TreeSet<>();
         for (var period:periods) {
             result.addAll(period.toDates(validDays));
@@ -62,10 +72,19 @@ public class TimeTable extends IdentifiedDSEntity  {
 
     @PrePersist
     @PreUpdate
+    private void compute() {
+        orderLists();
+        updateFirstLast();
+    }
+
     private void updateFirstLast() {
         var dates=getDates();
         first = dates.first();
         last = dates.last();
     }
 
+    private void orderLists() {
+        periods.sort(Comparator.comparing(Period::getStart));
+        days.sort(Comparator.comparing(TimeTableDay::getDay));
+    }
 }

@@ -1,38 +1,41 @@
 package qxtr.model.topology;
 
 import lombok.Getter;
-import lombok.Setter;
+import lombok.NoArgsConstructor;
 import lombok.ToString;
-import qxtr.model.DataSetImport;
+import qxtr.model.dataset.DataSetImport;
 import qxtr.model.common.IdentifiedDSEntity;
 import qxtr.model.schedules.VehicleJourney;
 
 import javax.persistence.*;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 
 @Getter
-@Setter
 @ToString
 @Entity
+@NoArgsConstructor
 public class JourneyPattern extends IdentifiedDSEntity {
 
-    public JourneyPattern(DataSetImport dataSetImport, String externalId, Route route) {
+    public JourneyPattern(DataSetImport dataSetImport, String externalId) {
         super(dataSetImport, externalId);
-        setRoute(route);
     }
 
     @ManyToOne(optional = false)
     @JoinColumn(nullable = false)
     private Route route;
 
-    @ManyToMany
-    @OrderColumn(name = "position", nullable = false)
-    private List<StopPoint> stopPoints;
+    @OneToMany(mappedBy = "journeyPattern",cascade = CascadeType.ALL)
+    @OrderBy("position")
+    private List<JourneyPatternStop> journeyPatternStops=new LinkedList<>();
+
+    public void setJourneyPatternStops(List<JourneyPatternStop> journeyPatternStops) {
+        this.journeyPatternStops=journeyPatternStops;
+        journeyPatternStops.forEach(journeyPatternStop -> journeyPatternStop.__setJourneyPattern(this));
+    }
 
     @OneToMany(mappedBy = "journeyPattern",cascade = CascadeType.ALL)
     @ToString.Exclude
-    private Set<VehicleJourney> vehicleJourneys;
+    private Set<VehicleJourney> vehicleJourneys=new HashSet<>();
 
     public void setRoute(Route route) {
         if (this.route==route) return;

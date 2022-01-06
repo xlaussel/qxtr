@@ -1,7 +1,7 @@
 package qxtr.model.common;
 
 import lombok.*;
-import qxtr.model.DataSetImport;
+import qxtr.model.dataset.DataSetImport;
 
 import javax.persistence.*;
 
@@ -13,7 +13,7 @@ import javax.persistence.*;
 public class DSEntity {
 
     @Id
-    @GeneratedValue(strategy= GenerationType.AUTO)
+    @GeneratedValue(generator= "ds-entity-sequence")
     @Basic(optional = false)
     @Column(nullable = false)
     protected long id;

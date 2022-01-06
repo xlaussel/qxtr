@@ -5,6 +5,7 @@ import com.sun.istack.NotNull;
 import lombok.SneakyThrows;
 
 import java.io.*;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 public class CsvReader implements Iterable<CsvReader.Line>, Iterator<CsvReader.Line> {
@@ -44,7 +45,7 @@ public class CsvReader implements Iterable<CsvReader.Line>, Iterator<CsvReader.L
 
         private final String[] values;
         public String get(@NotNull String columnName) {
-            return values[columnNames.get(columnName)];
+            return get(columnName,null);
         }
         public String get(int index) {
             return values[index];
@@ -56,6 +57,9 @@ public class CsvReader implements Iterable<CsvReader.Line>, Iterator<CsvReader.L
         }
 
         public String get(@NotNull String columnName,String defaultVal) {
+            if (!columnNames.containsKey(columnName)) {
+                return defaultVal;
+            }
             var val=values[columnNames.get(columnName)];
             return val.equals("")?defaultVal:val;
         }
@@ -74,8 +78,12 @@ public class CsvReader implements Iterable<CsvReader.Line>, Iterator<CsvReader.L
         internalReader=new BufferedReader(new InputStreamReader(stream));
         this.separator=String.valueOf(separator);
         int i=0;
-        for (String columnName : internalReader.readLine().split(this.separator)) {
-            columnNames.put(columnName,i++);
+        String line=internalReader.readLine();
+        if (line.charAt(0)=='\ufeff') { //TODO check if could be removed automatically
+            line=line.substring(1);
+        }
+        for (String columnName : line.split(this.separator,-1)) {
+            columnNames.put(columnName.trim(),i++);
         }
     }
 
@@ -93,7 +101,7 @@ public class CsvReader implements Iterable<CsvReader.Line>, Iterator<CsvReader.L
 
     public Line readLine() throws IOException {
         var line=internalReader.readLine();
-        return line==null?null:new Line(line.split(separator));
+        return line==null?null:new Line(line.split(separator,-1));
     }
 
     public void close() throws IOException {

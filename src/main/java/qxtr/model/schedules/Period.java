@@ -11,7 +11,6 @@ import java.util.Calendar;
 import java.util.List;
 
 @Getter
-@Setter
 @Embeddable
 @ToString
 @EqualsAndHashCode
@@ -28,7 +27,7 @@ public class Period {
     private LocalDate start;
 
     @Basic(optional = false)
-    @Column(nullable = false)
+    @Column(nullable = false,name="endd")
     private LocalDate end;
 
     public List<LocalDate> toDates() {

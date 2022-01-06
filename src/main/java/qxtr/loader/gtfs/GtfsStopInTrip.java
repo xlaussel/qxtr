@@ -1,7 +1,7 @@
 package qxtr.loader.gtfs;
 
 import lombok.Getter;
-import qxtr.model.schedules.VehicleJourneyAtStop;
+import qxtr.model.schedules.VehicleJourneyStop;
 
 import java.time.LocalTime;
 import java.util.Objects;
@@ -37,7 +37,4 @@ public class GtfsStopInTrip {
         return Objects.hash(stopId, sequence, arrivalTime, departureTime, alightAllowed, boardAllowed);
     }
 
-    public VehicleJourneyAtStop createVehicleJourneyAtStop() {
-
-    }
 }
