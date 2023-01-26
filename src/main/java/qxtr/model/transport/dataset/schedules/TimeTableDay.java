@@ -1,4 +1,4 @@
-package qxtr.model.schedules;
+package qxtr.model.transport.dataset.schedules;
 
 import lombok.Getter;
 import lombok.NoArgsConstructor;

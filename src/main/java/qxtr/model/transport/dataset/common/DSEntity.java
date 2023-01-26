@@ -1,15 +1,18 @@
-package qxtr.model.common;
+package qxtr.model.transport.dataset.common;
 
 import lombok.*;
-import qxtr.model.dataset.DataSetImport;
+import org.hibernate.annotations.Filter;
+import qxtr.model.transport.dataset.DataSetImport;
 
 import javax.persistence.*;
 
 @Getter
 @Setter
-@ToString()
+@ToString
 @MappedSuperclass
 @NoArgsConstructor
+@Filter(name="dataSetImport")
+@Filter(name="dataSetImports")
 public class DSEntity {
 
     @Id

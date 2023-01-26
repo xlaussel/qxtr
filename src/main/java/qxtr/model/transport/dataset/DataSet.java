@@ -1,18 +1,25 @@
-package qxtr.model.dataset;
+package qxtr.model.transport.dataset;
 
 import lombok.Getter;
+import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.ToString;
+import qxtr.model.transport.area.Area;
 
 import javax.persistence.*;
-import java.util.LinkedList;
-import java.util.List;
+import java.util.*;
 
 @Getter
 @Setter
 @ToString
 @Entity
+@NoArgsConstructor
 public class DataSet {
+
+    public DataSet(Area area) {
+        this.area=area;
+        area.getDataSets().add(this);
+    }
 
     @Id
     @GeneratedValue(strategy=GenerationType.AUTO)
@@ -26,7 +33,12 @@ public class DataSet {
 
     @OneToMany(mappedBy="dataSet",cascade = CascadeType.ALL)
     @ToString.Exclude
-    @OrderColumn
-    private List<DataSetImport> dataSetImports=new LinkedList<>();
+    private Set<DataSetImport> dataSetImports=new HashSet<>();
+
+    @Setter
+    @ToString.Exclude
+    @ManyToOne(optional = false)
+    @JoinColumn(nullable = false)
+    private Area area;
 
 }

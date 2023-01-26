@@ -1,10 +1,10 @@
-package qxtr.model.common;
+package qxtr.model.transport.dataset.common;
 
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.ToString;
-import qxtr.model.dataset.DataSetImport;
+import qxtr.model.transport.dataset.DataSetImport;
 
 import javax.persistence.*;
 

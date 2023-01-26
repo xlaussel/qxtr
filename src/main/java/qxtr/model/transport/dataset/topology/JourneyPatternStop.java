@@ -1,14 +1,13 @@
-package qxtr.model.topology;
+package qxtr.model.transport.dataset.topology;
 
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.ToString;
-import qxtr.model.dataset.DataSetImport;
-import qxtr.model.common.IdentifiedDSEntity;
+import qxtr.model.transport.dataset.DataSetImport;
+import qxtr.model.transport.dataset.common.IdentifiedDSEntity;
 
 import javax.persistence.*;
-
 
 /**
  *
@@ -28,7 +27,7 @@ public class JourneyPatternStop extends IdentifiedDSEntity {
     private JourneyPattern journeyPattern;
 
     @Setter
-    @ManyToOne(optional = false,cascade = CascadeType.ALL)
+    @ManyToOne(optional = false,cascade = CascadeType.PERSIST)
     @JoinColumn(nullable = false)
     private Stop stop;
 

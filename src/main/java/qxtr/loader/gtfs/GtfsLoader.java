@@ -6,12 +6,11 @@ import org.locationtech.jts.geom.Point;
 import org.locationtech.jts.geom.PrecisionModel;
 import qxtr.loader.LoaderInput;
 import qxtr.loader.LoaderInterface;
-import qxtr.model.dataset.DataSet;
-import qxtr.model.dataset.DataSetImport;
-import qxtr.model.common.IdentifiedDSEntity;
-import qxtr.model.common.StopTime;
-import qxtr.model.schedules.*;
-import qxtr.model.topology.*;
+import qxtr.model.transport.dataset.DataSet;
+import qxtr.model.transport.dataset.DataSetImport;
+import qxtr.model.transport.dataset.common.IdentifiedDSEntity;
+import qxtr.model.transport.dataset.schedules.*;
+import qxtr.model.transport.dataset.topology.*;
 import qxtr.utils.CsvReader;
 
 import java.io.*;
@@ -20,6 +19,7 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.StreamSupport;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
@@ -40,22 +40,47 @@ public class GtfsLoader implements LoaderInterface {
 
     private final IdentityHashMap<VehicleJourney, Route> vehicleJourneyRoutes = new IdentityHashMap<>();
 
-    private record VehicleJourneyStopAuthorization(boolean boardAllowed,boolean alightAllowed) {
+    /**
+     * Record used to put the data read in the time.txt file for further JourneyPattern and VehicleJourney creation
+     *
+     * The equals and hashCode are defined in order to be used by the JourneyPatternDifferentiator:
+     * They take into account only the stop, alightAllowed and boardAllowed fields.
+     */
+    public record VehicleJourneyStop(Stop stop, short position, int aimedArrival, int aimedDeparture,
+                                     boolean alightAllowed, boolean boardAllowed) implements Comparable<VehicleJourneyStop> {
+        @Override
+        public int compareTo(VehicleJourneyStop o) {
+            return position-o.position;
+        }
+
+
         @Override
         public boolean equals(Object o) {
-            if (this == o) return true;
-            if (o == null || getClass() != o.getClass()) return false;
-            VehicleJourneyStopAuthorization that = (VehicleJourneyStopAuthorization) o;
-            return boardAllowed == that.boardAllowed && alightAllowed == that.alightAllowed;
+            if (o==this) return true;
+            if (o==null) return false;
+            // Don't check the class because it will never be called with another class
+            var that=(VehicleJourneyStop)o;
+            // Don't use position nor schedules because we just want equivalence for JourneyPattern
+            return stop==that.stop && alightAllowed==that.alightAllowed && boardAllowed==that.boardAllowed;
         }
 
         @Override
         public int hashCode() {
-            return (boardAllowed?1:0)+(alightAllowed?2:0);
+            // Don't use position nor schedules because we just want equivalence for JourneyPattern
+            return Objects.hash(stop,alightAllowed,boardAllowed);
+        }
+
+        public boolean dontWaitAtStop() {
+            return aimedArrival==aimedDeparture;
         }
     }
 
-    private final IdentityHashMap<VehicleJourneyStop,VehicleJourneyStopAuthorization> vehicleJourneyStopAuthorizations=new IdentityHashMap<>();
+    private final IdentityHashMap<VehicleJourney,TreeSet<VehicleJourneyStop>> vehicleJourneyStops=new IdentityHashMap<>();
+
+
+    private void addVehicleJourneyStop(VehicleJourney vehicleJourney,VehicleJourneyStop vehicleJourneyStop) {
+        vehicleJourneyStops.computeIfAbsent(vehicleJourney,v->new TreeSet<>()).add(vehicleJourneyStop);
+    }
 
     private <T extends IdentifiedDSEntity> T getIdentifiedDSEntity(Class<T> clazz,String identifier) {
         return  getIdentifiedDSEntityMap(clazz)
@@ -75,7 +100,7 @@ public class GtfsLoader implements LoaderInterface {
 
     private final static GeometryFactory geometryFactory = new GeometryFactory(new PrecisionModel(), 4326);
 
-    public void load(InputStream zipData) throws IOException {
+    public DataSetImport load(InputStream zipData) throws IOException {
         ZipInputStream zstream = new ZipInputStream(zipData);
         ZipEntry entry;
         while ((entry = zstream.getNextEntry()) != null) {
@@ -91,10 +116,20 @@ public class GtfsLoader implements LoaderInterface {
         }
         zstream.close();
         makeJourneyPatterns();
+        return dataSetImport;
     }
 
+    private static Calendar cal=Calendar.getInstance();
+    long start;
+
     private void log(String message) {
-        System.out.println(message);
+        System.out.print(message+"...");
+        start=System.nanoTime();
+    }
+
+    private void done() {
+        var duration=System.nanoTime()-start;
+        System.out.format("\t\tdone in %,16d nanoseconds\n",duration);
     }
 
     private void loadAgencies(InputStream agencyStream) throws IOException {
@@ -103,11 +138,11 @@ public class GtfsLoader implements LoaderInterface {
         int AGENCY_ID=reader.columnIndex("agency_id");
         int AGENCY_NAME=reader.columnIndex("agency_name");
         reader.forEach(line -> getIdentifiedDSEntity(Agency.class,line.get(AGENCY_ID)).setName(line.get(AGENCY_NAME)));
-        log("Done");
+        done();
     }
 
     private void loadStops(InputStream stopsStream) throws IOException {
-        log("Loading Stop");
+        log("Loading Stops");
         CsvReader.reader(stopsStream).forEach(line -> {
             var type = line.get("location_type", "0");
             Point point = null;
@@ -120,9 +155,6 @@ public class GtfsLoader implements LoaderInterface {
             }
             var stopName=line.get("stop_name");
             var stopId = line.get("stop_id");
-            if (stopId.contains("IDFM:474351")) {
-                System.out.println("ppipo");
-            }
             if (type.equals("0")) {
                 Stop stop = getIdentifiedDSEntity(Stop.class,stopId);
                 stop.setName(stopName);
@@ -146,7 +178,12 @@ public class GtfsLoader implements LoaderInterface {
                 }
             }
         });
-        log("Done");
+        done();
+    }
+
+    private static int parseTime(String text) {
+        var vals=text.split(":");
+        return Integer.parseInt(vals[0])*3600+Integer.parseInt(vals[1])*60+Integer.parseInt(vals[2]);
     }
 
     private void loadTimes(InputStream stopTimesStream) throws IOException {
@@ -160,17 +197,17 @@ public class GtfsLoader implements LoaderInterface {
         var DROP_OFF_TYPE=reader.columnIndex("drop_off_type");
         var STOP_ID=reader.columnIndex("stop_id");
         reader.forEach(line -> {
-            var vehicleJourney = getIdentifiedDSEntity(VehicleJourney.class,line.get(TRIP_ID));
-            StopTime arrivaltime = StopTime.parse(line.get(ARRIVAL_TIME));
-            StopTime departuretime = StopTime.parse(line.get(DEPARTURE_TIME));
-            short sequence = Short.parseShort(line.get(STOP_SEQUENCE));
-            boolean boardAllowed = !line.get(PICKUP_TYPE, "0").equals("1");
-            boolean alightAllowed = !line.get(DROP_OFF_TYPE, "0").equals("1");
-            VehicleJourneyStop vehicleJourneyStop = new VehicleJourneyStop(dataSetImport, vehicleJourney, sequence, arrivaltime.toSeconds(), departuretime.toSeconds());
-            vehicleJourneyStopAuthorizations.put(vehicleJourneyStop,new VehicleJourneyStopAuthorization(boardAllowed,alightAllowed));
-            vehicleJourneyStop.setStop(getIdentifiedDSEntity(Stop.class,line.get(STOP_ID)));
+            addVehicleJourneyStop(
+                    getIdentifiedDSEntity(VehicleJourney.class,line.get(TRIP_ID)),
+                    new VehicleJourneyStop(
+                        getIdentifiedDSEntity(Stop.class,line.get(STOP_ID)),
+                        Short.parseShort(line.get(STOP_SEQUENCE)),
+                        parseTime(line.get(ARRIVAL_TIME)),
+                        parseTime(line.get(DEPARTURE_TIME)),
+                        !line.get(DROP_OFF_TYPE, "0").equals("1"),
+                        !line.get(PICKUP_TYPE, "0").equals("1")));
         });
-        log("Done");
+        done();
     }
 
     private void loadCalendar(InputStream calendarStream) throws IOException {
@@ -188,7 +225,7 @@ public class GtfsLoader implements LoaderInterface {
             timeTable.setValidDays(days);
             timeTable.getPeriods().add(new Period(start, end));
         });
-        log("Done");
+        done();
     }
 
     private void loadCalendarDates(InputStream calendarDatesStream) throws IOException {
@@ -199,7 +236,7 @@ public class GtfsLoader implements LoaderInterface {
             boolean in_out = line.get("exception_type", "1").equals("1");
             timeTable.getDays().add(new TimeTableDay(date, in_out));
         });
-        log("Done");
+        done();
     }
 
     private void loadTrips(InputStream tripStream) throws IOException {
@@ -215,7 +252,7 @@ public class GtfsLoader implements LoaderInterface {
             }
             vehicleJourneyRoutes.put(vehicleJourney, route);
         });
-        log("Done");
+        done();
     }
 
     private void loadRoutes(InputStream routesStream) throws IOException {
@@ -226,20 +263,41 @@ public class GtfsLoader implements LoaderInterface {
             theLine.setName(line.get("route_long_name", null));
             theLine.setAgency(getIdentifiedDSEntity(Agency.class,line.get("agency_id")));
         });
-        log("Done");
+        done();
     }
 
     /**
-     * Class used to discriminate the VehicleJourney
+     * Class used to discriminate the VehicleJourneys
+     *
+     * The equals ensure that the route is the same and that the stops are the same,
+     * in the same order and with the same board and alight restrictions, ie it is the same JourneyPattern
+     *
+     * The hash code is coherent of course
+     *
      */
-    private class JourneyPatternDiscriminator {
+    private class JourneyPatternDifferentiator {
 
         public final VehicleJourney vehicleJourney;
         public final Route route;
+        /*
+         * Using stops.toArray() because the TreeSet hashCode() doesn't take into account the order of the elements.
+         *
+         * The VehicleJourneyStop hashCode() doesn't use the position (We are not sure that the positions starts
+         * at 0 and doesn't contain 'holes').
+         *
+         * So otherwise it could easily lead to same hashcode for 2 different patterns if the journey contains
+         * the same stops in another order (For example in the probable case of a first pattern and the
+         * corresponding return pattern).
+         *
+         * This same hashCode() would lead to unnecessary equals() calls.
+         *
+         */
+        public final VehicleJourneyStop[] stops;
 
-        public JourneyPatternDiscriminator(VehicleJourney vehicleJourney,Route route) {
+        public JourneyPatternDifferentiator(VehicleJourney vehicleJourney) {
             this.vehicleJourney = vehicleJourney;
-            this.route=route;
+            this.route=vehicleJourneyRoutes.get(vehicleJourney);
+            this.stops=vehicleJourneyStops.get(vehicleJourney).toArray(new VehicleJourneyStop[0]);
         }
 
         /**
@@ -249,62 +307,39 @@ public class GtfsLoader implements LoaderInterface {
         @Override
         public boolean equals(Object o) {
             if (this == o) return true;
-            if (o == null || getClass() != o.getClass()) return false;
-            JourneyPatternDiscriminator that = (JourneyPatternDiscriminator) o;
+            if (o == null) return false;
+            // Don't check the class because it will never be called with another class
+            JourneyPatternDifferentiator that = (JourneyPatternDifferentiator) o;
             if (that.route!=route) return false;
-            if (vehicleJourney.getVehicleJourneyStops().size()!=that.vehicleJourney.getVehicleJourneyStops().size()) return false;
-            var iter1=vehicleJourney.getVehicleJourneyStops().iterator();
-            var iter2=that.vehicleJourney.getVehicleJourneyStops().iterator();
-            while (iter1.hasNext()) {
-                var p1=iter1.next();
-                var p2=iter2.next();
-                if (p1.getStop()!=p2.getStop()) return false;
-                if (!vehicleJourneyStopAuthorizations.get(p1).equals(vehicleJourneyStopAuthorizations.get(p2))) return false;
-            }
-            return true;
+            return Arrays.equals(stops,that.stops);
         };
 
+        //Cache the hash for performance improvment
         Integer hash=null;
 
         @Override
         public int hashCode() {
             if (hash==null) {
-                int computed = route.hashCode();
-                for (var vehicleJourneyStop : vehicleJourney.getVehicleJourneyStops()) {
-                    computed = computed * 31 + Objects.hash(
-                            vehicleJourneyStop.getStop(),
-                            vehicleJourneyStopAuthorizations.get(vehicleJourneyStop)
-                    );
-                }
-                hash = computed;
+                hash = Objects.hash(route, Arrays.hashCode(stops));
             }
-            return hash.intValue();
+            return hash;
         }
     }
 
     private void makeJourneyPatterns() {
         log("Making Patterns");
 
-        HashMap<JourneyPatternDiscriminator, List<VehicleJourney>> journeys = new HashMap<>();
+        HashMap<JourneyPatternDifferentiator, List<VehicleJourney>> journeys = new HashMap<>();
 
-
-        Comparator<VehicleJourneyStop> vehicleJourneyStopComparator=new Comparator<VehicleJourneyStop>() {
-            @Override
-            public int compare(VehicleJourneyStop o1, VehicleJourneyStop o2) {
-                return o1.getPosition()-o2.getPosition();
-            }
-        };
         getIdentifiedDSEntityMap(VehicleJourney.class).forEach((id,vehicleJourney)-> {
-            //Order stops to allow hash and egual. For use by JourneyPatternDiscriminator
-            vehicleJourney.getVehicleJourneyStops().sort(vehicleJourneyStopComparator);
-            journeys.computeIfAbsent(new JourneyPatternDiscriminator(vehicleJourney,vehicleJourneyRoutes.get(vehicleJourney)),k->new ArrayList<>()).add(vehicleJourney);
+            journeys.computeIfAbsent(new JourneyPatternDifferentiator(vehicleJourney), k->new ArrayList<>()).add(vehicleJourney);
         });
 
         IdentityHashMap<Route,Integer> nbJourneyPatternsFound=new IdentityHashMap<>();
 
-        journeys.forEach((discriminator,vehicleJourneys)-> {
+        journeys.forEach((differentiator,vehicleJourneys)-> {
 
-            var route=discriminator.route;
+            var route=differentiator.route;
 
 
             //create the journey pattern
@@ -318,14 +353,13 @@ public class GtfsLoader implements LoaderInterface {
             //create the JourneyPatternStops
             AtomicInteger i= new AtomicInteger(0);
             journeyPattern.setJourneyPatternStops(
-                    discriminator.vehicleJourney.getVehicleJourneyStops().stream()
+                    Arrays.stream(differentiator.stops)
                             .map(vehicleJourneyStop -> {
                                 String journeyPatternStopId=journeyPatternId+':'+(i.get());
                                 var journeyPatternStop=getIdentifiedDSEntity(JourneyPatternStop.class,journeyPatternStopId);
-                                var authorizations=vehicleJourneyStopAuthorizations.get(vehicleJourneyStop);
-                                journeyPatternStop.setStop(vehicleJourneyStop.getStop());
-                                journeyPatternStop.setAlightAllowed(authorizations.alightAllowed);
-                                journeyPatternStop.setBoardAllowed(authorizations.boardAllowed);
+                                journeyPatternStop.setStop(vehicleJourneyStop.stop);
+                                journeyPatternStop.setAlightAllowed(vehicleJourneyStop.alightAllowed);
+                                journeyPatternStop.setBoardAllowed(vehicleJourneyStop.boardAllowed);
                                 journeyPatternStop.setPosition((short) i.getAndIncrement());
                                 return journeyPatternStop;
                             }).toList());
@@ -334,19 +368,20 @@ public class GtfsLoader implements LoaderInterface {
             //set the JourneyPatternStops for all the vehicleJourneys, recompute their positions in order to start at 0 and eliminate holes
             vehicleJourneys.forEach(vehicleJourney -> {
                 vehicleJourney.setJourneyPattern(journeyPattern);
-                var iterJourneyPatternStops=journeyPattern.getJourneyPatternStops().iterator();
-                var iterVehicleJourneyStops=vehicleJourney.getVehicleJourneyStops().iterator();
-                while (iterJourneyPatternStops.hasNext()) {
-                    var journeyPatternStop=iterJourneyPatternStops.next();
-                    var vehicleJourneyStop=iterVehicleJourneyStops.next();
-                    vehicleJourneyStop.setJourneyPatternStop(journeyPatternStop);
-                    vehicleJourneyStop.setPosition(journeyPatternStop.getPosition());
+                var stops=vehicleJourneyStops.get(vehicleJourney);
+                boolean waitAtStop=!stops.stream().allMatch(VehicleJourneyStop::dontWaitAtStop);
+                int[] arrivals=stops.stream().mapToInt(VehicleJourneyStop::aimedArrival).toArray();
+                if (!waitAtStop) {
+                    vehicleJourney.setSchedules(new VehicleJourneySchedules(arrivals));
+                } else {
+                    int[] departures=stops.stream().mapToInt(VehicleJourneyStop::aimedDeparture).toArray();
+                    vehicleJourney.setSchedules(new VehicleJourneySchedules(arrivals,departures));
                 }
             });
 
 
         });
-        log("Done");
+        done();
     }
 
 }

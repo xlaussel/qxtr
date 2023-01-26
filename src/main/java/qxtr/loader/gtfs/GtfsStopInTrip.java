@@ -1,7 +1,6 @@
 package qxtr.loader.gtfs;
 
 import lombok.Getter;
-import qxtr.model.schedules.VehicleJourneyStop;
 
 import java.time.LocalTime;
 import java.util.Objects;

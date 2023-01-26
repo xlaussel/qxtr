@@ -7,7 +7,10 @@ import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import qxtr.loader.gtfs.GtfsLoader;
-import qxtr.model.dataset.DataSet;
+import qxtr.model.transport.area.Area;
+import qxtr.model.transport.area.AreaConfiguration;
+import qxtr.model.transport.dataset.DataSet;
+import qxtr.model.transport.dataset.DataSetImport;
 
 import javax.persistence.EntityManager;
 import javax.persistence.PersistenceContext;
@@ -16,27 +19,33 @@ import java.io.IOException;
 import java.io.InputStream;
 
 @Service
-@Order(2)
-public class LoadGtfs implements CommandLineRunner {
+public class LoadGtfs {
 
     @PersistenceContext
     private EntityManager entityManager;
 
-    protected void load(String file,DataSet dataSet) throws IOException {
+    @Transactional
+    protected DataSetImport load(String file, DataSet dataSet) throws IOException {
         GtfsLoader loader=new GtfsLoader(dataSet);
         InputStream inputStream=new FileInputStream(file);
-        loader.load(inputStream);
+        return loader.load(inputStream);
+
     }
 
-    @Override
     @Transactional
-    public void run(String... args) throws Exception {
+    public int createAndload(String fileName,int bsize) throws IOException {
         var session=entityManager.unwrap(Session.class);
-        session.setJdbcBatchSize(100000);
+        session.setJdbcBatchSize(bsize);
         session.setCacheMode(CacheMode.IGNORE);
-        DataSet dataSet=new DataSet();
+        Area area=new Area();
+        AreaConfiguration conf=new AreaConfiguration(area);
+        DataSet dataSet=new DataSet(area);
         dataSet.setName("Test");
-        entityManager.persist(dataSet);
-        load(args[0],dataSet);
+        DataSetImport dataSetImport=load(fileName,dataSet);
+        dataSetImport.setAreaConfiguration(conf);
+        entityManager.persist(area);
+        return dataSetImport.getId();
     }
+
+
 }

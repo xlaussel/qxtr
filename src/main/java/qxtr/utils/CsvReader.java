@@ -5,8 +5,9 @@ import com.sun.istack.NotNull;
 import lombok.SneakyThrows;
 
 import java.io.*;
-import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.util.concurrent.locks.Lock;
+import java.util.function.Consumer;
 
 public class CsvReader implements Iterable<CsvReader.Line>, Iterator<CsvReader.Line> {
 
@@ -37,9 +38,14 @@ public class CsvReader implements Iterable<CsvReader.Line>, Iterator<CsvReader.L
         return result;
     }
 
+
     private void fetchNext() throws IOException {
         next=readLine();
     }
+
+    Lock advanceLock;
+
+
 
     public class Line {
 
@@ -106,7 +112,6 @@ public class CsvReader implements Iterable<CsvReader.Line>, Iterator<CsvReader.L
     }
 
     private String[] splitLine(String line) {
-        int tokenIndex=0;
         int first=0;
         ArrayList<String> resultList=new ArrayList<>(20);
         for (int i=0;i<line.length();++i) {

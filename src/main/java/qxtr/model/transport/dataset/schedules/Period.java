@@ -1,4 +1,4 @@
-package qxtr.model.schedules;
+package qxtr.model.transport.dataset.schedules;
 
 import lombok.*;
 
@@ -7,7 +7,6 @@ import javax.persistence.Column;
 import javax.persistence.Embeddable;
 import java.time.LocalDate;
 import java.util.ArrayList;
-import java.util.Calendar;
 import java.util.List;
 
 @Getter

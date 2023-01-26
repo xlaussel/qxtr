@@ -1,12 +1,12 @@
-package qxtr.model.schedules;
+package qxtr.model.transport.dataset.schedules;
 
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.hibernate.annotations.Fetch;
 import org.hibernate.annotations.FetchMode;
-import qxtr.model.dataset.DataSetImport;
-import qxtr.model.common.IdentifiedDSEntity;
+import qxtr.model.transport.dataset.DataSetImport;
+import qxtr.model.transport.dataset.common.IdentifiedDSEntity;
 
 import javax.persistence.*;
 import java.time.LocalDate;
@@ -19,6 +19,7 @@ public class TimeTable extends IdentifiedDSEntity  {
 
     public TimeTable(DataSetImport dataSetImport, String externalId) {
         super(dataSetImport,externalId);
+        dataSetImport.getTimeTables().add(this);
     }
 
     @ManyToMany
@@ -48,14 +49,15 @@ public class TimeTable extends IdentifiedDSEntity  {
     private LocalDate last;
 
     @Transient
+    @Getter
     private TreeSet<LocalDate> dates;
 
     @PostLoad
     private void setDates() {
-        dates=getDates();
+        dates=computeDates();
     }
 
-    private TreeSet<LocalDate> getDates() {
+    private TreeSet<LocalDate> computeDates() {
         TreeSet<LocalDate> result=new TreeSet<>();
         for (var period:periods) {
             result.addAll(period.toDates(validDays));

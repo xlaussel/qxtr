@@ -1,10 +1,10 @@
-package qxtr.model.topology;
+package qxtr.model.transport.dataset.topology;
 
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.ToString;
-import qxtr.model.dataset.DataSetImport;
-import qxtr.model.common.IdentifiedDSEntity;
+import qxtr.model.transport.dataset.DataSetImport;
+import qxtr.model.transport.dataset.common.IdentifiedDSEntity;
 
 import javax.persistence.*;
 import java.util.HashSet;
@@ -23,7 +23,7 @@ public class Route extends IdentifiedDSEntity {
         super(dataSetImport, externalId);
     }
 
-    @ManyToOne(optional = false)
+    @ManyToOne(optional = false,cascade = CascadeType.PERSIST)
     @JoinColumn(nullable = false)
     private Line line;
 
